@@ -4,7 +4,9 @@
 
 #include "emcl/Particle.h"
 #include "emcl/Mcl.h"
+
 #include <cmath>
+#include <vector>
 
 namespace emcl {
 
@@ -15,25 +17,132 @@ Particle::Particle(double x, double y, double t, double w) : p_(x, y, t)
 	w_ = w;
 }
 
+//double Particle::vision_weight(yolov5_pytorch_ros::BoundingBoxes& bbox, YAML::Node &landmark_config)
+//{
+//    double vision_weight_ = 0;
+//    for(auto &b:bbox.bounding_boxes){
+//        double theta_best = M_PI;
+//        for(YAML::const_iterator Observed = landmark_config["landmark"][b.Class].begin(); Observed != landmark_config["landmark"][b.Class].end(); ++Observed){
+//            auto Ol_x = Observed->second["pose"][0].as<double>();
+//            auto Ol_y = Observed->second["pose"][1].as<double>();
+//            if((p_.x_ - Ol_x)*(p_.x_ - Ol_x) + ((p_.y_ - Ol_y))*(p_.y_ - Ol_y) <= 20){
+//                double phi = atan2(Ol_y - p_.y_, Ol_x - p_.x_) - p_.t_;
+//                double theta = std::abs(phi - b.yaw);
+//                if(theta > M_PI){
+//                    theta = 2*M_PI - theta;
+//                }
+//                if(theta <= 0.26) {
+//                    if (theta < theta_best) {
+//                        theta_best = theta;
+//                    }
+//                }
+//            }
+////            else{
+////                continue;
+////            }
+//
+//        }
+//        auto weigth = cos(theta_best) + 0.99;
+//        vision_weight_ += weigth;
+//    }
+//    if(bbox.bounding_boxes.size() != 0){
+//        vision_weight_ /= bbox.bounding_boxes.size();
+//    }
+//    else{
+//        vision_weight_ = 0;
+//    }
+//    return vision_weight_;
+//}
+double get_determinant(double cov_matrix[9])
+{
+    double det = cov_matrix[0] * cov_matrix[4] * cov_matrix[8] +
+                 cov_matrix[1] * cov_matrix[5] * cov_matrix[6] +
+                 cov_matrix[3] * cov_matrix[7] * cov_matrix[2] -
+                 cov_matrix[2] * cov_matrix[4] * cov_matrix[6] -
+                 cov_matrix[1] * cov_matrix[3] * cov_matrix[8] -
+                 cov_matrix[0] * cov_matrix[5] * cov_matrix[7];
+
+    return det;
+}
+int get_inverse(double *cov_matrix, double *result)
+{
+    double det = get_determinant(cov_matrix);
+    double inv[9] = {   1 * (cov_matrix[4] * cov_matrix[8] - cov_matrix[5] * cov_matrix[7]) / det,
+                        -1 * (cov_matrix[3] * cov_matrix[8] - cov_matrix[5] * cov_matrix[6]) / det,
+                        1 * (cov_matrix[3] * cov_matrix[7] - cov_matrix[4] * cov_matrix[6]) / det,
+                        -1 * (cov_matrix[1] * cov_matrix[8] - cov_matrix[2] * cov_matrix[7]) / det,
+                        1 * (cov_matrix[0] * cov_matrix[8] - cov_matrix[2] * cov_matrix[6]) / det,
+                        -1 * (cov_matrix[0] * cov_matrix[7] - cov_matrix[1] * cov_matrix[6]) / det,
+                        1 * (cov_matrix[1] * cov_matrix[5] - cov_matrix[2] * cov_matrix[4]) / det,
+                        -1 * (cov_matrix[0] * cov_matrix[5] - cov_matrix[2] * cov_matrix[3]) / det,
+                        1 * (cov_matrix[0] * cov_matrix[4] - cov_matrix[1] * cov_matrix[3]) / det};
+
+    memcpy(result, inv, 9*sizeof(double));
+
+    return 0;
+}
+
+int mult_1_3_x_3_3(double *mat_1_3, double *mat_3_3, double *result)
+{
+    double r[3] = { mat_1_3[0] * mat_3_3[0] + mat_1_3[1] * mat_3_3[3] + mat_1_3[2] * mat_3_3[6],
+                    mat_1_3[0] * mat_3_3[1] + mat_1_3[1] * mat_3_3[4] + mat_1_3[2] * mat_3_3[7],
+                    mat_1_3[0] * mat_3_3[2] + mat_1_3[1] * mat_3_3[5] + mat_1_3[2] * mat_3_3[8]};
+
+    memcpy(result, r, 3*sizeof(double));
+
+    return 0;
+}
+
+double mult_1_3_x_3_1(double *mat_1_3, double *mat_3_1)
+{
+    double result = mat_1_3[0] * mat_3_1[0] + mat_1_3[1] * mat_3_1[1] + mat_1_3[2] * mat_3_1[2];
+    return result;
+}
+
+
+double Particle::gps_weight(double cov_matrix[9], double gps_x, double gps_y, double gps_yaw)
+{
+    double total_dist_prob = 0;
+    double distanse = (pow(gps_x , 2)/cov_matrix[0] + pow(gps_y , 2)/cov_matrix[4] + pow(gps_yaw , 2)/cov_matrix[8]);
+
+    double cov = cov_matrix[0]*cov_matrix[4]*cov_matrix[8];
+    total_dist_prob += 1/sqrt(2*M_PI*cov)*exp(-0.5*distanse);
+
+    double mat[3] = {cov_matrix[0], cov_matrix[1], cov_matrix[2]};
+    double result[3];
+    double inverse[9];
+    get_inverse(mat, result);
+    mult_1_3_x_3_3(result, cov_matrix, inverse);
+    double temp = mult_1_3_x_3_1(inverse, mat);
+    double gps_weight_ = 1/pow(2*M_PI, 1.5)*1/ get_determinant(cov_matrix)*exp(-0.5*temp);
+    return gps_weight_;
+}
+
 double Particle::likelihood(LikelihoodFieldMap *map, Scan &scan)
 {
 	uint16_t t = p_.get16bitRepresentation();
-	double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t] 
-				- scan.lidar_pose_y_*Mcl::sin_[t];
-	double lidar_y = p_.y_ + scan.lidar_pose_x_*Mcl::sin_[t] 
-				+ scan.lidar_pose_y_*Mcl::cos_[t];
-	uint16_t lidar_yaw = Pose::get16bitRepresentation(scan.lidar_pose_yaw_);
+    double ans = 0.0;
+    if(map->isOccupied(p_.x_,p_.y_)){
+        ans = 0.0;
+    }
+    else{
+        double lidar_x = p_.x_ + scan.lidar_pose_x_*Mcl::cos_[t]
+                    - scan.lidar_pose_y_*Mcl::sin_[t];
+        double lidar_y = p_.y_ + scan.lidar_pose_x_*Mcl::sin_[t]
+                    + scan.lidar_pose_y_*Mcl::cos_[t];
+        uint16_t lidar_yaw = Pose::get16bitRepresentation(scan.lidar_pose_yaw_);
 
-	double ans = 0.0;
-	for(int i=0;i<scan.ranges_.size();i+=scan.scan_increment_){
-		if(not scan.valid(scan.ranges_[i]))
-			continue;
-		uint16_t a = scan.directions_16bit_[i] + t + lidar_yaw;
-		double lx = lidar_x + scan.ranges_[i] * Mcl::cos_[a];
-		double ly = lidar_y + scan.ranges_[i] * Mcl::sin_[a];
 
-		ans += map->likelihood(lx, ly);
-	}
+        for(int i=0;i<scan.ranges_.size();i+=scan.scan_increment_){
+            if(not scan.valid(scan.ranges_[i]))
+                continue;
+            uint16_t a = scan.directions_16bit_[i] + t + lidar_yaw;
+            double lx = lidar_x + scan.ranges_[i] * Mcl::cos_[a];
+            double ly = lidar_y + scan.ranges_[i] * Mcl::sin_[a];
+
+            ans += map->likelihood(lx, ly);
+        }
+    }
 	return ans;
 }
 

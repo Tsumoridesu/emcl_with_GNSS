@@ -1,14 +1,12 @@
 //SPDX-FileCopyrightText: 2022 Ryuichi Ueda ryuichiueda@gmail.com
 //SPDX-License-Identifier: LGPL-3.0-or-later
 
-#ifndef INTERFACE_EMCL_H__
-#define INTERFACE_EMCL_H__
+#ifndef INTERFACE_EMCL2_H__
+#define INTERFACE_EMCL2_H__
 
 #include <ros/ros.h>
-#include <nav_msgs/Odometry.h>
-#include "emcl/ExpResetMcl.h"
+#include "emcl/ExpResetMcl2.h"
 
-#include <tf/tf.h>
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/message_filter.h"
@@ -17,20 +15,19 @@
 #include "sensor_msgs/LaserScan.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "std_srvs/Empty.h"
-#include <eigen3/Eigen/Eigenvalues>
 
 namespace emcl {
 
-class EMclNode
+class EMcl2Node
 {
 public:
-	EMclNode();
-	~EMclNode();
+	EMcl2Node();
+	~EMcl2Node();
 
 	void loop(void);
 	int getOdomFreq(void);
 private:
-	std::shared_ptr<ExpResetMcl> pf_;
+	std::shared_ptr<ExpResetMcl2> pf_;
 	ros::NodeHandle nh_;
 	ros::NodeHandle private_nh_;
 
@@ -42,15 +39,11 @@ private:
 
 	ros::ServiceServer global_loc_srv_;
 
-    ros::Subscriber yolo_sub;
-    ros::Subscriber gps_sub_;
 	std::string footprint_frame_id_;
 	std::string global_frame_id_;
 	std::string odom_frame_id_;
 	std::string scan_frame_id_;
 	std::string base_frame_id_;
-    std::string landmark_file_path_;
-    std::string gps_topic_;
 
 	std::shared_ptr<tf2_ros::TransformBroadcaster> tfb_;
 	std::shared_ptr<tf2_ros::TransformListener> tfl_;
@@ -63,12 +56,6 @@ private:
 	bool simple_reset_request_;
 	double init_x_, init_y_, init_t_;
 
-//    yolov5_pytorch_ros::BoundingBoxes bbox_;
-    YAML::Node landmark_config_;
-    double cov_matrix_[9];
-    double gps_x_;
-    double gps_y_;
-    double gps_yaw_;
 	void publishPose(double x, double y, double t,
 			double x_dev, double y_dev, double t_dev,
 			double xy_cov, double yt_cov, double tx_cov);
@@ -86,8 +73,6 @@ private:
 	void cbScan(const sensor_msgs::LaserScan::ConstPtr &msg);
 	bool cbSimpleReset(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
 	void initialPoseReceived(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg);
-//    void yoloReceived(const yolov5_pytorch_ros::BoundingBoxes &msg);
-    void gpsPoseReceived(const nav_msgs::Odometry& msg);
 };
 
 }

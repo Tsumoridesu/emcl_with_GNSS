@@ -7,12 +7,15 @@
 #include <iostream>
 #include <stdlib.h>
 #include <cmath>
+#include "nav_msgs/Odometry.h"
 
 namespace emcl {
 
 ExpResetMcl::ExpResetMcl(const Pose &p, int num, const Scan &scan,
 				const std::shared_ptr<OdomModel> &odom_model,
 				const std::shared_ptr<LikelihoodFieldMap> &map,
+//                const yolov5_pytorch_ros::BoundingBoxes& bbox,
+                const YAML::Node& landmark_config,
 				double alpha_th, double open_space_th,
 				double expansion_radius_position, double expansion_radius_orientation)
 	: alpha_threshold_(alpha_th), open_space_threshold_(open_space_th),
@@ -25,7 +28,8 @@ ExpResetMcl::~ExpResetMcl()
 {
 }
 
-void ExpResetMcl::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv)
+void ExpResetMcl::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, bool inv, YAML::Node& landmark_config,double cov_matrix[9],double gps_x,double gps_y,double gps_yaw)
+
 {
 	if(processed_seq_ == scan_.seq_)
 		return;
@@ -59,18 +63,36 @@ void ExpResetMcl::sensorUpdate(double lidar_x, double lidar_y, double lidar_t, b
 	if(valid_beams == 0)
 		return;
 
-	for(auto &p : particles_)
-		p.w_ *= p.likelihood(map_.get(), scan);
-
+	for(auto &p : particles_) {
+//        p.w_ *= p.likelihood(map_.get(), scan);
+          p.w_ += p.gps_weight(cov_matrix, gps_x, gps_y, gps_yaw);
+//        auto w_v = p.vision_weight(bbox, landmark_config);
+//        if(bbox.bounding_boxes.size() > 0){
+//            p.w_ *= w_v;
+//        }
+    }
 	alpha_ = normalizeBelief()/valid_beams;
 	//alpha_ = nonPenetrationRate( particles_.size() / 20, map_.get(), scan); //new version
 	ROS_INFO("ALPHA: %f / %f", alpha_, alpha_threshold_);
-	if(alpha_ < alpha_threshold_ and valid_pct > open_space_threshold_){
-		ROS_INFO("RESET");
-		expansionReset();
-		for(auto &p : particles_)
-			p.w_ *= p.likelihood(map_.get(), scan);
+    ROS_INFO("particles size : %zu",particles_.size());
+	if(alpha_ < alpha_threshold_ and valid_pct > open_space_threshold_) {
+        ROS_INFO("RESET");
+//        vision_sensorReset(bbox, landmark_config, particles_);
+        expansionReset();
+        for (auto &p: particles_){
+//            p.w_ *= p.likelihood(map_.get(), scan);
+            p.w_ += p.gps_weight(cov_matrix, gps_x, gps_y, gps_yaw);
+//            auto w_v = p.vision_weight(bbox, landmark_config);
+//            if(bbox.bounding_boxes.size() > 0){
+//                p.w_ *= w_v;
+//            }
+        }
 	}
+    else{
+        if(particles_.size()>500){
+            particles_.pop_back();
+        }
+    }
 
 	if(normalizeBelief() > 0.000001)
 		resampling();
@@ -93,4 +115,23 @@ void ExpResetMcl::expansionReset(void)
 	}
 }
 
+
+//void ExpResetMcl::vision_sensorReset(yolov5_pytorch_ros::BoundingBoxes &bbox, YAML::Node &landmark_config,std::vector<Particle> &result) {
+//    srand((unsigned)time(NULL));
+//    if (bbox.bounding_boxes.size() != 0) {
+//        for(auto observed_landmark : bbox.bounding_boxes){
+//            for(YAML::const_iterator l_ = landmark_config["landmark"][observed_landmark.Class].begin(); l_!= landmark_config["landmark"][observed_landmark.Class].end(); ++l_){
+//                for (int i = 0; i <= 1; i++) {
+//                    Pose p_;
+//                    p_.x_ = l_->second["pose"][0].as<double>() + (double) rand() / RAND_MAX * 10;
+//                    p_.y_ = l_->second["pose"][1].as<double>() + (double) rand() / RAND_MAX * 10;
+//                    p_.t_ = 2 * M_PI * rand() / RAND_MAX - M_PI;
+//                    Particle P(p_.x_, p_.y_, p_.t_, 0);
+//                    result.push_back(P);
+//                    result.erase(result.begin());
+//                }
+//            }
+//        }
+//    }
+//}
 }

@@ -20,6 +20,7 @@ public:
 
 	void setLikelihood(int x, int y, double range);
 	double likelihood(double x, double y);
+    bool isOccupied(double x, double y);
 
 	std::vector<double *> likelihoods_;
 	int width_;

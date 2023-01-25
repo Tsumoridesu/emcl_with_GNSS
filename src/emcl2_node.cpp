@@ -2,17 +2,17 @@
 //SPDX-License-Identifier: LGPL-3.0-or-later
 //Some lines are derived from https://github.com/ros-planning/navigation/tree/noetic-devel/amcl. 
 
-#include "emcl/emcl_node.h"
+#include "emcl/emcl2_node.h"
 #include "emcl/Pose.h"
 
 #include "tf2/utils.h"
 #include "geometry_msgs/PoseArray.h"
 #include "nav_msgs/GetMap.h"
 #include "std_msgs/Float32.h"
-#include "yaml-cpp/yaml.h"
+
 namespace emcl {
 
-EMclNode::EMclNode() : private_nh_("~")
+EMcl2Node::EMcl2Node() : private_nh_("~")
 {
 	initCommunication();
 	initPF();
@@ -23,37 +23,31 @@ EMclNode::EMclNode() : private_nh_("~")
 	simple_reset_request_ = false;
 }
 
-EMclNode::~EMclNode()
+EMcl2Node::~EMcl2Node()
 {
 }
 
-void EMclNode::initCommunication(void)
+void EMcl2Node::initCommunication(void)
 {
 	particlecloud_pub_ = nh_.advertise<geometry_msgs::PoseArray>("particlecloud", 2, true);
 	pose_pub_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("mcl_pose", 2, true);
 	alpha_pub_ = nh_.advertise<std_msgs::Float32>("alpha", 2, true);
-	laser_scan_sub_ = nh_.subscribe("scan", 2, &EMclNode::cbScan, this);
-	initial_pose_sub_ = nh_.subscribe("initialpose", 2, &EMclNode::initialPoseReceived, this);
-//    yolo_sub = nh_.subscribe("detected_objects_in_image", 1, &EMclNode::yoloReceived, this);
-	global_loc_srv_ = nh_.advertiseService("global_localization", &EMclNode::cbSimpleReset, this);
-    gps_sub_ = nh_.subscribe(gps_topic_, 1, &EMclNode::gpsPoseReceived, this);
+	laser_scan_sub_ = nh_.subscribe("scan", 2, &EMcl2Node::cbScan, this);
+	initial_pose_sub_ = nh_.subscribe("initialpose", 2, &EMcl2Node::initialPoseReceived, this);
+
+	global_loc_srv_ = nh_.advertiseService("global_localization", &EMcl2Node::cbSimpleReset, this);
 
 	private_nh_.param("global_frame_id", global_frame_id_, std::string("map"));
 	private_nh_.param("footprint_frame_id", footprint_frame_id_, std::string("base_footprint"));
 	private_nh_.param("odom_frame_id", odom_frame_id_, std::string("odom"));
 	private_nh_.param("base_frame_id", base_frame_id_, std::string("base_link"));
 
-//    private_nh_.param("landmark_file_path", landmark_file_path_, std::string("../landmarks.yaml"));
-
-    private_nh_.param("gps_topic", gps_topic_, std::string("/gps_odometry"));
-
-//    landmark_config_ = YAML::LoadFile(landmark_file_path_);
 	tfb_.reset(new tf2_ros::TransformBroadcaster());
 	tf_.reset(new tf2_ros::Buffer());
 	tfl_.reset(new tf2_ros::TransformListener(*tf_));
 }
 
-void EMclNode::initPF(void)
+void EMcl2Node::initPF(void)
 {
 	std::shared_ptr<LikelihoodFieldMap> map = std::move(initMap());
 	std::shared_ptr<OdomModel> om = std::move(initOdometry());
@@ -69,20 +63,25 @@ void EMclNode::initPF(void)
 	private_nh_.param("initial_pose_a", init_pose.t_, 0.0);
 
 	int num_particles;
-	double alpha_th, open_space_th;
+	double alpha_th;
 	double ex_rad_pos, ex_rad_ori;
-//    yolov5_pytorch_ros::BoundingBoxes bbox;
 	private_nh_.param("num_particles", num_particles, 0);
-	private_nh_.param("alpha_threshold", alpha_th, 0.0);
-	private_nh_.param("open_space_threshold", open_space_th, 0.05);
+	private_nh_.param("alpha_threshold", alpha_th, 0.5);
 	private_nh_.param("expansion_radius_position", ex_rad_pos, 0.1);
 	private_nh_.param("expansion_radius_orientation", ex_rad_ori, 0.2);
 
-	pf_.reset(new ExpResetMcl(init_pose, num_particles, scan, om, map,landmark_config_,
-				alpha_th, open_space_th, ex_rad_pos, ex_rad_ori));
+	double extraction_rate, range_threshold;
+	bool sensor_reset;
+	private_nh_.param("extraction_rate", extraction_rate, 0.1);
+	private_nh_.param("range_threshold", range_threshold, 0.1);
+	private_nh_.param("sensor_reset", sensor_reset, true);
+
+	pf_.reset(new ExpResetMcl2(init_pose, num_particles, scan, om, map,
+				alpha_th, ex_rad_pos, ex_rad_ori,
+				extraction_rate, range_threshold, sensor_reset));
 }
 
-std::shared_ptr<OdomModel> EMclNode::initOdometry(void)
+std::shared_ptr<OdomModel> EMcl2Node::initOdometry(void)
 {
 	double ff, fr, rf, rr;
 	private_nh_.param("odom_fw_dev_per_fw", ff, 0.19);
@@ -92,7 +91,7 @@ std::shared_ptr<OdomModel> EMclNode::initOdometry(void)
 	return std::shared_ptr<OdomModel>(new OdomModel(ff, fr, rf, rr));
 }
 
-std::shared_ptr<LikelihoodFieldMap> EMclNode::initMap(void)
+std::shared_ptr<LikelihoodFieldMap> EMcl2Node::initMap(void)
 {
 	double likelihood_range;
 	private_nh_.param("laser_likelihood_max_dist", likelihood_range, 0.2);
@@ -112,13 +111,13 @@ std::shared_ptr<LikelihoodFieldMap> EMclNode::initMap(void)
 	return std::shared_ptr<LikelihoodFieldMap>(new LikelihoodFieldMap(resp.map, likelihood_range));
 }
 
-void EMclNode::cbScan(const sensor_msgs::LaserScan::ConstPtr &msg)
+void EMcl2Node::cbScan(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
     scan_frame_id_ = msg->header.frame_id;
     pf_->setScan(msg);
 }
 
-void EMclNode::initialPoseReceived(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg)
+void EMcl2Node::initialPoseReceived(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg)
 {
 	init_request_ = true;
 	init_x_ = msg->pose.pose.position.x;
@@ -126,55 +125,7 @@ void EMclNode::initialPoseReceived(const geometry_msgs::PoseWithCovarianceStampe
 	init_t_ = tf2::getYaw(msg->pose.pose.orientation);
 }
 
-//void EMclNode::yoloReceived(const yolov5_pytorch_ros::BoundingBoxes &msg)
-//{
-//    bbox_= msg;
-//
-//}
-void EMclNode::gpsPoseReceived(const nav_msgs::Odometry& msg){
-    tf::Quaternion q(
-            msg.pose.pose.orientation.x,
-            msg.pose.pose.orientation.y,
-            msg.pose.pose.orientation.z,
-            msg.pose.pose.orientation.w);
-    tf::Matrix3x3 m(q);
-    double roll, pitch, yaw;
-    m.getRPY(roll, pitch, yaw);
-    cov_matrix_[0] = msg.pose.covariance[0] ;
-    cov_matrix_[1] = msg.pose.covariance[1] ;
-    cov_matrix_[2] = msg.pose.covariance[5] ;
-    cov_matrix_[3] = msg.pose.covariance[6] ;
-    cov_matrix_[4] = msg.pose.covariance[7] ;
-    cov_matrix_[5] = msg.pose.covariance[11];
-    cov_matrix_[6] = msg.pose.covariance[30];
-    cov_matrix_[7] = msg.pose.covariance[31];
-    cov_matrix_[8] = msg.pose.covariance[35];
-    gps_x_ = msg.pose.pose.position.x;
-    gps_y_ = msg.pose.pose.position.y;
-    gps_yaw_ = yaw;
-
-    Eigen::Matrix3f cov;
-    Eigen::Matrix<float, 3, 1> eigenvalues;
-    Eigen::Matrix3f eigenvalues2;
-    Eigen::Matrix3f eigen_mat;
-    cov << msg.pose.covariance[0] ,msg.pose.covariance[1] ,msg.pose.covariance[5] ,msg.pose.covariance[6] ,msg.pose.covariance[7] ,msg.pose.covariance[11] ,msg.pose.covariance[30] ,msg.pose.covariance[31] ,msg.pose.covariance[35];
-
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigensolver(cov);
-
-    if (eigensolver.info() != Eigen::Success)
-        abort();
-
-    eigenvalues = eigensolver.eigenvalues();
-
-    eigenvalues2 << eigenvalues(0,0), 0, 0, 0, eigenvalues(1,0), 0, 0, 0, eigenvalues(2,0);
-
-    eigen_mat = eigenvalues2 * eigensolver.eigenvectors();
-
-    double temp_mat[9] = {eigen_mat(0,0), eigen_mat(0,1), eigen_mat(0,2), eigen_mat(1,0), eigen_mat(1,1), eigen_mat(1,2), eigen_mat(2,0), eigen_mat(2,1), eigen_mat(2,2)};
-
-}
-
-void EMclNode::loop(void)
+void EMcl2Node::loop(void)
 {
 	if(init_request_){
 		pf_->initialize(init_x_, init_y_, init_t_);
@@ -203,7 +154,7 @@ void EMclNode::loop(void)
 	struct timespec ts_start, ts_end;
 	clock_gettime(CLOCK_REALTIME, &ts_start);
 	*/
-	pf_->sensorUpdate(lx, ly, lt, inv,landmark_config_,cov_matrix_,gps_x_,gps_y_,gps_yaw_);
+	pf_->sensorUpdate(lx, ly, lt, inv);
 	/*
 	clock_gettime(CLOCK_REALTIME, &ts_end);
 	struct tm tm;
@@ -225,7 +176,7 @@ void EMclNode::loop(void)
 	alpha_pub_.publish(alpha_msg);
 }
 
-void EMclNode::publishPose(double x, double y, double t,
+void EMcl2Node::publishPose(double x, double y, double t,
 			double x_dev, double y_dev, double t_dev,
 			double xy_cov, double yt_cov, double tx_cov)
 {
@@ -253,7 +204,7 @@ void EMclNode::publishPose(double x, double y, double t,
 	pose_pub_.publish(p);
 }
 
-void EMclNode::publishOdomFrame(double x, double y, double t)
+void EMcl2Node::publishOdomFrame(double x, double y, double t)
 {
 	geometry_msgs::PoseStamped odom_to_map;
 	try{
@@ -284,7 +235,7 @@ void EMclNode::publishOdomFrame(double x, double y, double t)
 	tfb_->sendTransform(tmp_tf_stamped);
 }
 
-void EMclNode::publishParticles(void)
+void EMcl2Node::publishParticles(void)
 {
 	geometry_msgs::PoseArray cloud_msg;
 	cloud_msg.header.stamp = ros::Time::now();
@@ -303,7 +254,7 @@ void EMclNode::publishParticles(void)
 	particlecloud_pub_.publish(cloud_msg);
 }
 
-bool EMclNode::getOdomPose(double& x, double& y, double& yaw)
+bool EMcl2Node::getOdomPose(double& x, double& y, double& yaw)
 {
 	geometry_msgs::PoseStamped ident;
 	ident.header.frame_id = footprint_frame_id_;
@@ -324,7 +275,7 @@ bool EMclNode::getOdomPose(double& x, double& y, double& yaw)
 	return true;
 }
 
-bool EMclNode::getLidarPose(double& x, double& y, double& yaw, bool& inv)
+bool EMcl2Node::getLidarPose(double& x, double& y, double& yaw, bool& inv)
 {
 	geometry_msgs::PoseStamped ident;
 	ident.header.frame_id = scan_frame_id_;
@@ -348,11 +299,11 @@ bool EMclNode::getLidarPose(double& x, double& y, double& yaw, bool& inv)
 	return true;
 }
 
-int EMclNode::getOdomFreq(void){
+int EMcl2Node::getOdomFreq(void){
 	return odom_freq_;
 }
 
-bool EMclNode::cbSimpleReset(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+bool EMcl2Node::cbSimpleReset(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
 	return simple_reset_request_ = true;
 }
@@ -363,7 +314,7 @@ int main(int argc, char **argv)
 {
 
 	ros::init(argc, argv, "mcl_node");
-	emcl::EMclNode node;
+	emcl::EMcl2Node node;
 
 	ros::Rate loop_rate(node.getOdomFreq());
 	while (ros::ok()){

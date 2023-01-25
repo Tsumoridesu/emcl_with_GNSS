@@ -1,0 +1,64 @@
+#/////////////////////////////#
+#ランドマークの記入例
+#landmark:
+#  landmark_name:     #認識したいランドマークの名前
+#    id:                         #ランドマークの番号/特殊の名前
+#     pose: [x, y, z]             #ランドマークの位置
+#     enable: null               #ランドマークが使うかどうか
+#     option: null                         #ランドマーク他の色々
+#
+#    id2:                         #ランドマークの番号/特殊の名前
+#     pose: [x, y, z]             #ランドマークの位置
+#     enable: null               #ランドマークが使うかどうか
+#     option: null                         #ランドマーク他の色々
+
+#/////////////////////////////#
+
+landmark:
+  Vending machine:
+    id:
+     pose: [2.54, -6.05, 0]
+     enable: true
+     option: null
+    id2:
+     pose: [3.82, -6.05, 0]
+     enable: true
+     option: null
+
+#  door:
+#    id:
+#     pose: [1, 0, 0]
+#     enable: true
+#     option: null
+#    id2:
+#     pose: [2, 0, 0]
+#     enable: true
+#     option: null
+
+  Elevator:
+    id:
+     pose: [-7.8, -7.9, 0]
+     enable: true
+     option: null
+    id2:
+     pose: [-5.6, -7.9, 0]
+     enable: true
+     option: null
+    id3:
+      pose: [-3.2, -7.9, 0]
+      enable: true
+      option: null
+    id4:
+      pose: [-6.6, -2.5, 0]
+      enable: true
+      option: null
+    id5:
+      pose: [-3.9, -2.5, 0]
+      enable: true
+      option: null
+    id6:
+      pose: [-5.3, 20.9, 0]
+      enable: true
+      option: null
+
+

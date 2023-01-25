@@ -56,6 +56,19 @@ double LikelihoodFieldMap::likelihood(double x, double y)
 	return likelihoods_[ix][iy];
 }
 
+
+bool LikelihoodFieldMap::isOccupied(double x, double y)
+{
+    int ix = (int)floor((x - origin_x_)/resolution_);
+    int iy = (int)floor((y - origin_y_)/resolution_);
+
+    if(std::binary_search(free_cells_.begin(), free_cells_.end(), std::pair<int, int>(ix, iy)))
+        return false;
+    else
+        return true;
+
+}
+
 void LikelihoodFieldMap::setLikelihood(int x, int y, double range)
 {
 	int cell_num = (int)ceil(range/resolution_);
@@ -65,8 +78,7 @@ void LikelihoodFieldMap::setLikelihood(int x, int y, double range)
 
 	for(int i=-cell_num; i<=cell_num; i++)
 		for(int j=-cell_num; j<=cell_num; j++)
-			if(i+x >= 0 and j+y >= 0 and i+x < width_ and j+y < height_)
-				likelihoods_[i+x][j+y] = std::max(likelihoods_[i+x][j+y], 
+			likelihoods_[i+x][j+y] = std::max(likelihoods_[i+x][j+y], 
 			                         std::min(weights[abs(i)], weights[abs(j)]));
 }
 
