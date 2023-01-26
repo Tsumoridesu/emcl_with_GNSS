@@ -8,6 +8,7 @@
 #include "emcl/LikelihoodFieldMap.h"
 //#include "yolov5_pytorch_ros/BoundingBoxes.h"
 #include "yaml-cpp/yaml.h"
+#include <rosconsole/macros_generated.h>
 namespace emcl {
 
 
@@ -18,8 +19,7 @@ public:
 	Particle(double x, double y, double t, double w);
 
 	double likelihood(LikelihoodFieldMap *map, Scan &scan);
-    double gps_weight(double cov_matrix[9], double gps_x, double gps_y, double gps_yaw);
-//    double vision_weight(yolov5_pytorch_ros::BoundingBoxes& bbox, YAML::Node& landmark_config);
+    double gps_weight(double *cov_matrix, double gps_x, double gps_y, double gps_yaw);
 	bool wallConflict(LikelihoodFieldMap *map, Scan &scan, double threshold, bool replace);
 	Pose p_;
 	double w_;

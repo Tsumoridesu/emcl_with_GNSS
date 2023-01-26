@@ -43,7 +43,8 @@ private:
 	ros::ServiceServer global_loc_srv_;
 
     ros::Subscriber yolo_sub;
-    ros::Subscriber gps_sub_;
+    ros::Subscriber gps_sub;
+
 	std::string footprint_frame_id_;
 	std::string global_frame_id_;
 	std::string odom_frame_id_;
@@ -63,8 +64,7 @@ private:
 	bool simple_reset_request_;
 	double init_x_, init_y_, init_t_;
 
-//    yolov5_pytorch_ros::BoundingBoxes bbox_;
-    YAML::Node landmark_config_;
+
     double cov_matrix_[9];
     double gps_x_;
     double gps_y_;
@@ -86,7 +86,6 @@ private:
 	void cbScan(const sensor_msgs::LaserScan::ConstPtr &msg);
 	bool cbSimpleReset(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
 	void initialPoseReceived(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg);
-//    void yoloReceived(const yolov5_pytorch_ros::BoundingBoxes &msg);
     void gpsPoseReceived(const nav_msgs::Odometry& msg);
 };
 
